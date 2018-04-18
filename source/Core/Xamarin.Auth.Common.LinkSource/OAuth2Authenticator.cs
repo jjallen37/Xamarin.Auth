@@ -23,8 +23,10 @@ using Xamarin.Utilities;
 using System.Net;
 using System.Text;
 using System.Runtime.CompilerServices;
+using PCLCrypto;
+using static PCLCrypto.WinRTCrypto;
 
-#if ! AZURE_MOBILE_SERVICES
+#if !AZURE_MOBILE_SERVICES
 namespace Xamarin.Auth
 #else
 namespace Xamarin.Auth._MobileServices
@@ -51,6 +53,7 @@ namespace Xamarin.Auth._MobileServices
         Uri redirectUrl;
         Uri accessTokenUrl;
         GetUsernameAsyncFunc getUsernameAsync;
+        string codeVerifier;
 
 
         #region     State
@@ -69,6 +72,7 @@ namespace Xamarin.Auth._MobileServices
             set
             {
                 request_state = value;
+        string codeVerifier;
 
                 return;
             }
@@ -457,6 +461,16 @@ namespace Xamarin.Auth._MobileServices
         /// </returns>
         public override Task<Uri> GetInitialUrlAsync(Dictionary<string, string> custom_query_parameters = null)
         {
+            if (custom_query_parameters == null)
+            {
+                custom_query_parameters = new Dictionary<string, string>();
+            }
+
+            if (IsProofKeyCodeForExchange)
+            {
+                custom_query_parameters.Add("code_challenge", CreateCodeChallenge());
+                custom_query_parameters.Add("code_challenge_method", "S256");
+            }
             /*
 			 	mc++
 				OriginalString property of the Uri object should be used instead of AbsoluteUri
@@ -857,6 +871,10 @@ namespace Xamarin.Auth._MobileServices
             {
                 queryValues["client_secret"] = clientSecret;
             }
+            if (IsProofKeyCodeForExchange)
+            {
+                queryValues.Add("code_verifier", codeVerifier);
+            }
 
             return RequestAccessTokenAsync(queryValues);
         }
@@ -1005,6 +1023,80 @@ namespace Xamarin.Auth._MobileServices
             sb.Append(prefix).AppendLine($"ClientId          = {ClientId}");
 
             return sb.ToString();
+        }
+        private string CreateCodeChallenge()
+        {
+            codeVerifier = RandomNumberGenerator.CreateUniqueId();
+            var sha256 = HashAlgorithmProvider.OpenAlgorithm(HashAlgorithm.Sha256);
+            var challengeBuffer = sha256.HashData(
+                CryptographicBuffer.CreateFromByteArray(Encoding.UTF8.GetBytes(codeVerifier)));
+            byte[] challengeBytes;
+            CryptographicBuffer.CopyToByteArray(challengeBuffer, out challengeBytes);
+            return Base64Url.Encode(challengeBytes);
+        }
+
+        internal static class RandomNumberGenerator
+        {
+            public static string CreateUniqueId(int length = 64)
+            {
+                var bytes = PCLCrypto.WinRTCrypto.CryptographicBuffer.GenerateRandom(length);
+                return ByteArrayToString(bytes);
+            }
+
+            private static string ByteArrayToString(byte[] array)
+            {
+                var hex = new StringBuilder(array.Length * 2);
+                foreach (byte b in array)
+                {
+                    hex.AppendFormat("{0:x2}", b);
+                }
+                return hex.ToString();
+            }
+        }
+
+        /// <summary>
+        /// Base64Url encoder/decoder from IdentityModel Nuget
+        /// </summary>
+        internal static class Base64Url
+        {
+            /// <summary>
+            /// Encodes the specified byte array.
+            /// </summary>
+            /// <param name="arg">The argument.</param>
+            /// <returns></returns>
+            public static string Encode(byte[] arg)
+            {
+                var s = Convert.ToBase64String(arg); // Standard base64 encoder
+
+                s = s.Split('=')[0]; // Remove any trailing '='s
+                s = s.Replace('+', '-'); // 62nd char of encoding
+                s = s.Replace('/', '_'); // 63rd char of encoding
+
+                return s;
+            }
+
+            /// <summary>
+            /// Decodes the specified string.
+            /// </summary>
+            /// <param name="arg">The argument.</param>
+            /// <returns></returns>
+            /// <exception cref="System.Exception">Illegal base64url string!</exception>
+            public static byte[] Decode(string arg)
+            {
+                var s = arg;
+                s = s.Replace('-', '+'); // 62nd char of encoding
+                s = s.Replace('_', '/'); // 63rd char of encoding
+
+                switch (s.Length % 4) // Pad with trailing '='s
+                {
+                    case 0: break; // No pad chars in this case
+                    case 2: s += "=="; break; // Two pad chars
+                    case 3: s += "="; break; // One pad char
+                    default: throw new Exception("Illegal base64url string!");
+                }
+
+                return Convert.FromBase64String(s); // Standard base64 decoder
+            }
         }
     }
 }

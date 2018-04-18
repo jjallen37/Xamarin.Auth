@@ -1139,7 +1139,7 @@ Task ("libs-windows-tooling")
                 InformationFancy("msBuildPathX64       = " + msBuildPathX64);
 
                 // FIX csc path is invalid 
-                msBuildPathX64 = "C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/MSBuild/15.0/Bin/MSBuild.exe";
+                msBuildPathX64 = "C:/Program Files (x86)/Microsoft Visual Studio/2017/Professional/MSBuild/15.0/Bin/MSBuild.exe";
                 InformationFancy("msBuildPathX64 FIXED = " + msBuildPathX64);
             }
             
